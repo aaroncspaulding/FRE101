@@ -1,7 +1,6 @@
 import os
 from typing import List
 
-import numpy as np
 import pandas as pd
 
 
@@ -18,7 +17,13 @@ class VocabCSV:
         self.file_name = str(file_name)
 
         self.file_path = os.path.join(directory, self.file_name)
-        self.df = pd.read_csv(self.file_path, header=None, names=self.columns)
+
+        try:
+            self.df = pd.read_csv(self.file_path, header=None, names=self.columns)
+        except KeyError:
+            self.df = pd.read_csv(self.file_path, header=None, names=self.columns[:2])
+            self.df['tags'] = self.file_name[:-4]
+            self.save()
 
         self.df['file_name'] = self.file_name
 
@@ -55,10 +60,7 @@ class AllVocab:
             print(
                 '\t'
                 + '\033[91m'
-                + f'Warning: English translations are not consistent for word: '
-                + '\033[93m'
-                + '\033[1m'
-                + f'{row["french"]}'
+                + f'Warning: English translations are not consistent'
                 + '\033[0m'
             )
 
@@ -73,15 +75,17 @@ class AllVocab:
         tags.sort()
         new_tags = ' '.join(tags)
 
-        # We need to apply this tag if this does not exist in the tags for this word
-        if not all(
-            self.all_vocab[self.all_vocab['french'] == row['french']]['tags']
-            == new_tags
-        ):
-            # Apply the tags to all duplicates in each vocab list
-            for vocab_list in self.vocab_list:
-                index = vocab_list.df['french'] == row['french']
+        # Apply the tags to all duplicates in each vocab list
+        for vocab_list in self.vocab_list:
+            index = vocab_list.df['french'] == row['french']
 
+            # noinspection PyUnresolvedReferences
+            number_of_duplicates = index.sum()
+
+            if number_of_duplicates == 0:
+                # The word is not in this list file
+                pass
+            elif number_of_duplicates >= 1:
                 # if the existing tags in this list do not math the new tags, then update
                 if not all(vocab_list.df.loc[index, 'tags'] == new_tags):
                     vocab_list.df.loc[index, 'tags'] = new_tags
@@ -99,31 +103,26 @@ class AllVocab:
                         + f'{vocab_list.file_name}'
                         + '\033[0m'
                     )
-                elif np.sum(index) >= 1:
-                    # print no change to filename for word
+
+                if number_of_duplicates > 1:
                     print(
                         '\t'
-                        + 'No changes for word '
+                        + '\033[91m'
+                        + 'Warning: More than one duplicate found in file '
                         + '\033[93m'
-                        + '\033[1m'
-                        + f'{row["french"]}'
-                        + '\033[0m'
-                        + ' in file '
                         + '\033[1m'
                         + f'{vocab_list.file_name}'
                         + '\033[0m'
                     )
-                else:
-                    # The word does not exist in this vocab list
-                    pass
-            print()
 
     def fix_duplicates(self):
-        duplicates = self.all_vocab[self.all_vocab.duplicated(subset=['french'])]
+        duplicated_index = self.all_vocab.duplicated(subset='french')
+        duplicates = self.all_vocab[duplicated_index].copy()
+        duplicates.drop_duplicates(subset='french', keep='first', inplace=True)
         duplicates.reset_index(drop=True, inplace=True)
 
         for i, row in duplicates.iterrows():
-            # get list of files that contain this word
+            # get files that contain this word
             files = list(
                 self.all_vocab[self.all_vocab['french'] == row['french']]['file_name']
             )
